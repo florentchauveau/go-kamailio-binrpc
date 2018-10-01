@@ -11,6 +11,8 @@ go-kamailio-binrpc has been tested with Go 1.11, but should work with previous v
 
 ## Usage
 
+### Code
+
 ```go
 package main
 
@@ -57,6 +59,23 @@ func main() {
 	)
 }
 ```
+
+### Kamailio config
+
+The `ctl` module must be loaded:
+
+```
+loadmodule "ctl.so"
+```
+
+In order to connect remotely, you must listen on TCP or UDP (defaults to local unix socket):
+
+```
+modparam("ctl", "binrpc", "tcp:2049")
+```
+
+**WARNING**: this will open your Kamailio to the world. Make sure you have a firewall in place, or listen on an internal interface.
+
 
 ## Limits
 
