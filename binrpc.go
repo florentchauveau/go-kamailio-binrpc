@@ -17,20 +17,36 @@
 //
 // - ReadPacket to read the response
 //
-//   // let's suppose conn is connected to a Kamailio using TCP
-//   cookie, err := WritePacketString(&conn, "tm.stats")
+//   package main
 //
-//   if err != nil {
-//	   return err
+//   import (
+//   	"fmt"
+//   	"net"
+//
+//   	binrpc "github.com/florentchauveau/go-kamailio-binrpc"
+//   )
+//
+//   func main() {
+//   	conn, err := net.Dial("tcp", "localhost:2049")
+//
+//   	if err != nil {
+//   		panic(err)
+//   	}
+//
+//   	cookie, err := binrpc.WritePacketString(conn, "tm.stats")
+//
+//   	if err != nil {
+//   		panic(err)
+//   	}
+//
+//   	records, err := binrpc.ReadPacket(conn, cookie)
+//
+//   	if err != nil {
+//   		panic(err)
+//   	}
+//
+//   	fmt.Printf("records = %v", records)
 //   }
-//
-//   records, err := ReadPacket(&conn, cookie)
-//
-//   if err != nil {
-//	   return err
-//   }
-//
-//   fmt.Printf("records = %+v\n", records)
 //
 package binrpc
 
@@ -234,7 +250,7 @@ func ReadHeader(r io.Reader) (*Header, error) {
 	return &header, nil
 }
 
-// ReadRecord is a low level function that reads from r and returns a Record or an error if one occured.
+// ReadRecord is a low level function that reads from r and returns a Record or an error if one occurred.
 func ReadRecord(r io.Reader) (*Record, error) {
 	record := Record{}
 
@@ -339,7 +355,7 @@ func ReadRecord(r io.Reader) (*Record, error) {
 	return &record, nil
 }
 
-// ReadPacket reads from r and returns records, or an error if one occured.
+// ReadPacket reads from r and returns records, or an error if one occurred.
 // If expectedCookie is not nil, it verifies the cookie.
 func ReadPacket(r io.Reader, expectedCookie []byte) ([]Record, error) {
 	bufreader := bufio.NewReader(r)
@@ -378,7 +394,7 @@ func ReadPacket(r io.Reader, expectedCookie []byte) ([]Record, error) {
 }
 
 // WritePacket creates a BINRPC packet (header and payload) containing values v, and writes it to w.
-// It returns the cookie generated, or an error if one occured.
+// It returns the cookie generated, or an error if one occurred.
 func WritePacket(w io.Writer, values []interface{}) ([]byte, error) {
 	var header bytes.Buffer
 	var payload bytes.Buffer
@@ -432,19 +448,19 @@ func WritePacket(w io.Writer, values []interface{}) ([]byte, error) {
 }
 
 // WritePacketValue creates a BINRPC packet (header and payload) containing value v, and writes it to w.
-// It returns the cookie generated, or an error if one occured.
+// It returns the cookie generated, or an error if one occurred.
 func WritePacketValue(w io.Writer, v interface{}) ([]byte, error) {
 	return WritePacket(w, []interface{}{v})
 }
 
 // WritePacketString creates a BINRPC packet (header and payload) containing string s, and writes it to w.
-// It returns the cookie generated, or an error if one occured.
+// It returns the cookie generated, or an error if one occurred.
 func WritePacketString(w io.Writer, s string) ([]byte, error) {
 	return WritePacket(w, []interface{}{s})
 }
 
 // WritePacketStrings creates a BINRPC packet (header and payload) containing strings s, and writes it to w.
-// It returns the cookie generated, or an error if one occured.
+// It returns the cookie generated, or an error if one occurred.
 func WritePacketStrings(w io.Writer, s []string) ([]byte, error) {
 	args := make([]interface{}, len(s))
 
