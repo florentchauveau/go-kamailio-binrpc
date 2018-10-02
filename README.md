@@ -31,8 +31,8 @@ func main() {
 		panic(err)
 	}
 
-	// WritePacketString returns the cookie generated
-	cookie, err := binrpc.WritePacketString(conn, "tm.stats")
+	// WritePacket returns the cookie generated
+	cookie, err := binrpc.WritePacket(conn, "tm.stats")
 
 	if err != nil {
 		panic(err)
@@ -48,10 +48,10 @@ func main() {
 
 	// "tm.stats" returns one record that is a map
 	// with at least "total" and "current" keys
-	avpMap, _ := records[0].GetMap()
+	avpMap, _ := records[0].Map()
 
-	total, _ := avpMap["total"].GetInt()
-	current, _ := avpMap["current"].GetInt()
+	total, _ := avpMap["total"].Int()
+	current, _ := avpMap["current"].Int()
 
 	fmt.Printf("total = %d\ncurrent = %d\n",
 		total,
