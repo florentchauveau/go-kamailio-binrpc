@@ -1,0 +1,11 @@
+# Golang CircleCI 2.0 configuration file
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/golang:1.11
+
+    working_directory: /go/src/github.com/florentchauveau/go-kamailio-binrpc
+    steps:
+      - checkout
+      - run: go test -v
