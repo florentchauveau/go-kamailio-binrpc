@@ -13,7 +13,7 @@
 //
 // High level functions:
 //
-// - WritePacket* to call an RPC function (a string like "tm.stats")
+// - WritePacket to call an RPC function (a string like "tm.stats")
 //
 // - ReadPacket to read the response
 //
@@ -33,7 +33,7 @@
 //   		panic(err)
 //   	}
 //
-//   	cookie, err := binrpc.WritePacketString(conn, "tm.stats")
+//   	cookie, err := binrpc.WritePacket(conn, "tm.stats")
 //
 //   	if err != nil {
 //   		panic(err)
@@ -54,10 +54,12 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
+	"strconv"
+
+	"github.com/pkg/errors"
 )
 
 // BinRPCMagic is a magic value at the start of every BINRPC packet.
@@ -73,19 +75,15 @@ const (
 	TypeArray  uint8 = 0x4
 	TypeAVP    uint8 = 0x5
 	TypeBytes  uint8 = 0x6
+
+	// the totalLength cannot be larger than 4 bytes
+	// because we have 2 bits to write its "length-1"
+	// so "4" is the largest length that we can write
+	MaxSizeOfLength uint8 = 4
 )
 
-// Errors returned by the package
-var (
-	ErrBinarySize     = errors.New("cannot get binary size of value")
-	ErrCookieMismatch = errors.New("cookie mismatch")
-	ErrLengthTooBig   = errors.New("packet too big")
-	ErrTypeConvert    = errors.New("cannot convert go type to binrpc type")
-	ErrTypeNotImpl    = errors.New("type not implemented")
-	ErrWrongType      = errors.New("wrong type requested")
-
-	errEndOfStruct = errors.New("END_OF_STRUCT")
-)
+// internal error used to detect the end of a struct
+var errEndOfStruct = errors.New("END_OF_STRUCT")
 
 // Header is a struct containing values needed for parsing the payload and replying. It is not a binary representation of the actual header.
 type Header struct {
@@ -102,31 +100,74 @@ type Record struct {
 	Value interface{}
 }
 
-// GetString returns the string value, or an error if the type is not a string.
-func (record Record) GetString() (string, error) {
+// String returns the string value, or an error if the type is not a string.
+func (record Record) String() (string, error) {
 	if record.Type != TypeString {
-		return "", ErrWrongType
+		return "", fmt.Errorf("type error: expected type string (%d), got %d", TypeString, record.Type)
 	}
 
 	return record.Value.(string), nil
 }
 
-// GetInt returns the int value, or an error if the type is not a int.
-func (record Record) GetInt() (int, error) {
+// Int returns the int value, or an error if the type is not a int.
+func (record Record) Int() (int, error) {
 	if record.Type != TypeInt {
-		return 0, ErrWrongType
+		return 0, fmt.Errorf("type error: expected type int (%d), got %d", TypeInt, record.Type)
 	}
 
 	return record.Value.(int), nil
 }
 
-// GetMap returns the map for a struct value, or an error if not a struct.
-func (record *Record) GetMap() (map[string]Record, error) {
+// Map returns the map for a struct value, or an error if not a struct.
+func (record *Record) Map() (map[string]Record, error) {
 	if record.Type != TypeStruct {
-		return nil, ErrWrongType
+		return nil, fmt.Errorf("type error: expected type struct (%d), got %d", TypeStruct, record.Type)
 	}
 
 	return record.Value.(map[string]Record), nil
+}
+
+// Scan copies the value in the Record into the values pointed at by dest. Valid dest type are *int, *string, and *map[string]Record
+func (record *Record) Scan(dest interface{}) error {
+	switch dest.(type) {
+	case *string:
+		s := dest.(*string)
+
+		switch record.Type {
+		case TypeString:
+			*s = record.Value.(string)
+		case TypeInt:
+			*s = strconv.Itoa(record.Value.(int))
+		default:
+			return fmt.Errorf("type error: cannot convert type %d to string", record.Type)
+		}
+	case *int:
+		i := dest.(*int)
+
+		switch record.Type {
+		case TypeString:
+			if n, err := strconv.Atoi(record.Value.(string)); err == nil {
+				*i = n
+			} else {
+				return err
+			}
+		case TypeInt:
+			*i = record.Value.(int)
+		default:
+			return fmt.Errorf("type error: cannot convert type %d to int", record.Type)
+		}
+	case *map[string]Record:
+		if record.Type != TypeStruct {
+			return fmt.Errorf("type error: cannot convert type %d to map", record.Type)
+		}
+
+		rmap := dest.(*map[string]Record)
+		*rmap = record.Value.(map[string]Record)
+	default:
+		return errors.New("invalid dest type")
+	}
+
+	return nil
 }
 
 // Encode is a low level function that encodes a record and writes it to w.
@@ -162,7 +203,7 @@ func (record *Record) Encode(w io.Writer) error {
 		value = append([]byte(value.(string)), 0x00)
 
 		if sizeOfValue = binary.Size(value); sizeOfValue == -1 {
-			return ErrBinarySize
+			return fmt.Errorf(`cannot get binary size of "%v"`, value)
 		}
 	default:
 		return fmt.Errorf("type error: type %d not implemented", record.Type)
@@ -204,7 +245,7 @@ func CreateRecord(v interface{}) (*Record, error) {
 	case int:
 		record.Type = TypeInt
 	default:
-		return nil, ErrTypeConvert
+		return nil, errors.New("type not implemented")
 	}
 
 	return &record, nil
@@ -214,8 +255,10 @@ func CreateRecord(v interface{}) (*Record, error) {
 func ReadHeader(r io.Reader) (*Header, error) {
 	buf := make([]byte, 2)
 
-	if len, err := r.Read(buf); err != nil || len != 2 {
-		return nil, fmt.Errorf("cannot read header: err=%v, len=%d/2", err, len)
+	if len, err := r.Read(buf); err != nil {
+		return nil, errors.Wrap(err, "cannot read header")
+	} else if len != 2 {
+		return nil, fmt.Errorf("cannot read header: read=%d/%d", len, 2)
 	}
 
 	if magic := buf[0] >> 4; magic != BinRPCMagic {
@@ -231,8 +274,10 @@ func ReadHeader(r io.Reader) (*Header, error) {
 
 	buf = make([]byte, sizeOfLength)
 
-	if len, err := r.Read(buf); err != nil || len != int(sizeOfLength) {
-		return nil, fmt.Errorf("cannot read total length, err=%v, len=%d/%d", err, len, sizeOfLength)
+	if len, err := r.Read(buf); err != nil {
+		return nil, errors.Wrap(err, "cannot read total length")
+	} else if len != int(sizeOfLength) {
+		return nil, fmt.Errorf("cannot read total length, read=%d/%d", len, sizeOfLength)
 	}
 
 	header := Header{}
@@ -243,8 +288,10 @@ func ReadHeader(r io.Reader) (*Header, error) {
 
 	header.Cookie = make([]byte, sizeOfCookie)
 
-	if len, err := r.Read(header.Cookie); err != nil || len != int(sizeOfCookie) {
-		return nil, fmt.Errorf("cannot read total length, err=%v, len=%d/%d", err, len, sizeOfCookie)
+	if len, err := r.Read(header.Cookie); err != nil {
+		return nil, errors.Wrap(err, "cannot read cookie")
+	} else if len != int(sizeOfCookie) {
+		return nil, fmt.Errorf("cannot read cookie, read=%d/%d", len, sizeOfCookie)
 	}
 
 	return &header, nil
@@ -256,8 +303,10 @@ func ReadRecord(r io.Reader) (*Record, error) {
 
 	buf := make([]byte, 1)
 
-	if len, err := r.Read(buf); err != nil || len != 1 {
-		return nil, fmt.Errorf("cannot read record header: err=%v, len=%d/1", err, len)
+	if len, err := r.Read(buf); err != nil {
+		return nil, errors.Wrap(err, "cannot read record header")
+	} else if len != 1 {
+		return nil, fmt.Errorf("cannot read record header: read=%d/1", len)
 	}
 
 	flag := buf[0] >> 7
@@ -274,8 +323,10 @@ func ReadRecord(r io.Reader) (*Record, error) {
 	if flag == 1 {
 		buf = make([]byte, size)
 
-		if len, err := r.Read(buf); err != nil || len != size {
-			return nil, fmt.Errorf("cannot read record size: err=%v, len=%d/%d", err, len, size)
+		if len, err := r.Read(buf); err != nil {
+			return nil, errors.Wrap(err, "cannot read record size")
+		} else if len != size {
+			return nil, fmt.Errorf("cannot read record size: read=%d/%d", len, size)
 		}
 
 		size = 0
@@ -291,8 +342,10 @@ func ReadRecord(r io.Reader) (*Record, error) {
 	} else {
 		buf = make([]byte, size)
 
-		if len, err := r.Read(buf); err != nil || len != size {
-			return nil, fmt.Errorf("cannot read record value: err=%v, len=%d/%d", err, len, size)
+		if len, err := r.Read(buf); err != nil {
+			return nil, errors.Wrap(err, "cannot read record value")
+		} else if len != size {
+			return nil, fmt.Errorf("cannot read record value: read=%d/%d", len, size)
 		}
 	}
 
@@ -349,7 +402,7 @@ func ReadRecord(r io.Reader) (*Record, error) {
 
 		record.Value = avpMap
 	default:
-		return nil, ErrTypeNotImpl
+		return nil, fmt.Errorf("type error: type %d not implemented", record.Type)
 	}
 
 	return &record, nil
@@ -366,7 +419,7 @@ func ReadPacket(r io.Reader, expectedCookie []byte) ([]Record, error) {
 	}
 
 	if expectedCookie != nil && bytes.Compare(expectedCookie, header.Cookie) != 0 {
-		return nil, ErrCookieMismatch
+		return nil, errors.New("expected cookie did not match")
 	}
 
 	payloadBytes := make([]byte, header.PayloadLength)
@@ -395,7 +448,11 @@ func ReadPacket(r io.Reader, expectedCookie []byte) ([]Record, error) {
 
 // WritePacket creates a BINRPC packet (header and payload) containing values v, and writes it to w.
 // It returns the cookie generated, or an error if one occurred.
-func WritePacket(w io.Writer, values []interface{}) ([]byte, error) {
+func WritePacket(w io.Writer, values ...interface{}) ([]byte, error) {
+	if len(values) == 0 {
+		return nil, errors.New("missing values")
+	}
+
 	var header bytes.Buffer
 	var payload bytes.Buffer
 
@@ -416,11 +473,8 @@ func WritePacket(w io.Writer, values []interface{}) ([]byte, error) {
 	sizeOfLength, totalLength := getMinBinarySizeOfInt(payload.Len())
 	sizeOfCookie := binary.Size(cookie)
 
-	// the totalLength cannot be larger than 4 bytes
-	// because we have 2 bits to write its "length-1"
-	// so "4" is the largest length that we can write
-	if sizeOfLength > 4 {
-		return nil, ErrLengthTooBig
+	if sizeOfLength > MaxSizeOfLength {
+		return nil, fmt.Errorf("packet length too big: %d/%d bytes", sizeOfLength, MaxSizeOfLength)
 	}
 
 	header.WriteByte(BinRPCMagic<<4 | BinRPCVersion)
@@ -445,30 +499,6 @@ func WritePacket(w io.Writer, values []interface{}) ([]byte, error) {
 	binary.BigEndian.PutUint32(cookieBytes, cookie)
 
 	return cookieBytes, nil
-}
-
-// WritePacketValue creates a BINRPC packet (header and payload) containing value v, and writes it to w.
-// It returns the cookie generated, or an error if one occurred.
-func WritePacketValue(w io.Writer, v interface{}) ([]byte, error) {
-	return WritePacket(w, []interface{}{v})
-}
-
-// WritePacketString creates a BINRPC packet (header and payload) containing string s, and writes it to w.
-// It returns the cookie generated, or an error if one occurred.
-func WritePacketString(w io.Writer, s string) ([]byte, error) {
-	return WritePacket(w, []interface{}{s})
-}
-
-// WritePacketStrings creates a BINRPC packet (header and payload) containing strings s, and writes it to w.
-// It returns the cookie generated, or an error if one occurred.
-func WritePacketStrings(w io.Writer, s []string) ([]byte, error) {
-	args := make([]interface{}, len(s))
-
-	for i, v := range s {
-		args[i] = v
-	}
-
-	return WritePacket(w, args)
 }
 
 // getMinBinarySizeOfInt returns the minimum size in bytes to store a
