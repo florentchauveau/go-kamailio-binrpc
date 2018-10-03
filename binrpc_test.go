@@ -87,18 +87,25 @@ func TestReadRecordStruct(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if _, ok := record.Value.(map[string]Record); !ok {
+	if _, ok := record.Value.([]StructItem); !ok {
 		t.Error("type mismatch, expected struct")
 	}
 
-	v := record.Value.(map[string]Record)
+	items := record.Value.([]StructItem)
 
-	if _, ok := v["total"]; !ok {
-		t.Error(`expected key "total" not found`)
+	found := false
+	for _, item := range items {
+		if item.Key == "total" {
+			found = true
+			if item.Value.Value.(int) != 8989173 {
+				t.Error(`value of "total" != 8989173`)
+			}
+			break
+		}
 	}
 
-	if record, ok := v["total"]; !ok || record.Value.(int) != 8989173 {
-		t.Error(`value of "total" != 8989173`)
+	if !found {
+		t.Error(`expected key "total" not found`)
 	}
 }
 
@@ -234,7 +241,7 @@ func ExampleWritePacket() {
 	// based on records[0].Type, records[0].Value is either:
 	// an int (TypeInt)
 	// a string (TypeString)
-	// a map[string]Record (TypeStruct)
+	// a []StructItem (TypeStruct)
 
 	response, _ := records[0].String()
 
@@ -264,7 +271,7 @@ func ExampleWritePacket_scan() {
 	// based on records[0].Type, records[0].Value is either:
 	// an int (TypeInt)
 	// a string (TypeString)
-	// a map[string]Record (TypeStruct)
+	// a []StructItem (TypeStruct)
 
 	var response string
 
@@ -275,7 +282,7 @@ func ExampleWritePacket_scan() {
 	fmt.Printf("response = %s", response)
 }
 
-func ExampleWritePacket_mapResponse() {
+func ExampleWritePacket_structResponse() {
 	// establish connection to Kamailio server
 	conn, err := net.Dial("tcp", "localhost:2049")
 
@@ -298,20 +305,21 @@ func ExampleWritePacket_mapResponse() {
 		panic(err)
 	}
 
-	// "tm.stats" returns one record that is a map
-	// with at least "total" and "current" keys
-	avpMap, _ := records[0].Map()
+	// "tm.stats" returns one record that is a struct
+	// and all items are int values
+	items, _ := records[0].StructItems()
 
-	total, _ := avpMap["total"].Int()
-	current, _ := avpMap["current"].Int()
+	for _, item := range items {
+		value, _ := item.Value.Int()
 
-	fmt.Printf("total = %d\ncurrent = %d\n",
-		total,
-		current,
-	)
+		fmt.Printf("%s = %d\n",
+			item.Key,
+			value,
+		)
+	}
 }
 
-func ExampleWritePacket_mapResponseScan() {
+func ExampleWritePacket_structResponseScan() {
 	// establish connection to Kamailio server
 	conn, err := net.Dial("tcp", "localhost:2049")
 
@@ -334,19 +342,20 @@ func ExampleWritePacket_mapResponseScan() {
 		panic(err)
 	}
 
-	// "tm.stats" returns one record that is a map
-	// with at least "total" and "current" keys
-	var avpMap map[string]Record
+	// "tm.stats" returns one record that is a struct
+	// and all items are int values
+	var items []StructItem
 
-	if err = records[0].Scan(&avpMap); err != nil {
+	if err = records[0].Scan(&items); err != nil {
 		panic(err)
 	}
 
-	total, _ := avpMap["total"].Int()
-	current, _ := avpMap["current"].Int()
+	for _, item := range items {
+		value, _ := item.Value.Int()
 
-	fmt.Printf("total = %d\ncurrent = %d\n",
-		total,
-		current,
-	)
+		fmt.Printf("%s = %d\n",
+			item.Key,
+			value,
+		)
+	}
 }
