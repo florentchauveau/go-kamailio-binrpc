@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net"
 
-	binrpc "github.com/florentchauveau/go-kamailio-binrpc"
+	binrpc "github.com/florentchauveau/go-kamailio-binrpc/v2"
 )
 
 func main() {
