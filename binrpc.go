@@ -100,6 +100,13 @@ type Record struct {
 	Value interface{}
 }
 
+// StructItem represents an item in a BINRPC struct. Because BINRPC structs may contain the same key multiple times,
+// structs are handled with arrays of StructItem.
+type StructItem struct {
+	Key   string
+	Value Record
+}
+
 // String returns the string value, or an error if the type is not a string.
 func (record Record) String() (string, error) {
 	if record.Type != TypeString {
@@ -118,16 +125,16 @@ func (record Record) Int() (int, error) {
 	return record.Value.(int), nil
 }
 
-// Map returns the map for a struct value, or an error if not a struct.
-func (record *Record) Map() (map[string]Record, error) {
+// StructItems returns items for a struct value, or an error if not a struct.
+func (record *Record) StructItems() ([]StructItem, error) {
 	if record.Type != TypeStruct {
 		return nil, fmt.Errorf("type error: expected type struct (%d), got %d", TypeStruct, record.Type)
 	}
 
-	return record.Value.(map[string]Record), nil
+	return record.Value.([]StructItem), nil
 }
 
-// Scan copies the value in the Record into the values pointed at by dest. Valid dest type are *int, *string, and *map[string]Record
+// Scan copies the value in the Record into the values pointed at by dest. Valid dest type are *int, *string, and *[]StructItem
 func (record *Record) Scan(dest interface{}) error {
 	switch dest.(type) {
 	case *string:
@@ -156,13 +163,13 @@ func (record *Record) Scan(dest interface{}) error {
 		default:
 			return fmt.Errorf("type error: cannot convert type %d to int", record.Type)
 		}
-	case *map[string]Record:
+	case *[]StructItem:
 		if record.Type != TypeStruct {
-			return fmt.Errorf("type error: cannot convert type %d to map", record.Type)
+			return fmt.Errorf("type error: cannot convert type %d to []StructItem", record.Type)
 		}
 
-		rmap := dest.(*map[string]Record)
-		*rmap = record.Value.(map[string]Record)
+		items := dest.(*[]StructItem)
+		*items = record.Value.([]StructItem)
 	default:
 		return errors.New("invalid dest type")
 	}
@@ -371,7 +378,7 @@ func ReadRecord(r io.Reader) (*Record, error) {
 			record.Value = record.Value.(int)<<8 + int(b)
 		}
 	case TypeStruct:
-		avpMap := make(map[string]Record)
+		var items []StructItem
 
 		for {
 			avpName, err := ReadRecord(r)
@@ -395,12 +402,15 @@ func ReadRecord(r io.Reader) (*Record, error) {
 				return nil, err
 			}
 
-			avpMap[avpName.Value.(string)] = *avpValue
+			items = append(items, StructItem{
+				Key:   avpName.Value.(string),
+				Value: *avpValue,
+			})
 
 			record.size += avpValue.size
 		}
 
-		record.Value = avpMap
+		record.Value = items
 	default:
 		return nil, fmt.Errorf("type error: type %d not implemented", record.Type)
 	}

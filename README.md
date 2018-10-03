@@ -47,17 +47,18 @@ func main() {
 		panic(err)
 	}
 
-	// "tm.stats" returns one record that is a map
-	// with at least "total" and "current" keys
-	avpMap, _ := records[0].Map()
+	// "tm.stats" returns one record that is a struct
+	// and all items are int values
+	items, _ := records[0].StructItems()
 
-	total, _ := avpMap["total"].Int()
-	current, _ := avpMap["current"].Int()
+	for _, item := range items {
+		value, _ := item.Value.Int()
 
-	fmt.Printf("total = %d\ncurrent = %d\n",
-		total,
-		current,
-	)
+		fmt.Printf("%s = %d\n",
+			item.Key,
+			value,
+		)
+	}
 }
 ```
 
