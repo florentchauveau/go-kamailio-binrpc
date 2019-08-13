@@ -38,6 +38,9 @@ func main() {
 
 	// WritePacket returns the cookie generated
 	cookie, err := binrpc.WritePacket(conn, "tm.stats")
+	
+	// for commands that require args, add them as function args
+	// like this: binrpc.WritePacket(conn, "stats.fetch", "all")
 
 	if err != nil {
 		panic(err)
