@@ -503,9 +503,9 @@ func WritePacket(w io.Writer, values ...interface{}) (uint32, error) {
 	return cookie, nil
 }
 
-// getMinBinarySizeOfInt returns the minimum size in bytes to store a
-// signed integer.
-func getMinBinarySizeOfInt(n int) uint8 {
+// getMinBinarySizeOfInt returns the minimum size in bytes required to store an integer.
+func getMinBinarySizeOfInt(value int) uint8 {
+	n := uint32(value)
 	size := uint8(0)
 
 	for size = 4; size > 0 && ((n & (0xff << 24)) == 0); size-- {
@@ -519,9 +519,10 @@ func intToBytesBE(n int) []byte {
 	size := getMinBinarySizeOfInt(n)
 	bytes := make([]byte, size)
 
-	for i := uint8(0); i < size; i++ {
+	for ; size > 0; size-- {
 		// big endian
-		bytes[i] = byte(n >> ((size - i - 1) * 8))
+		bytes[size-1] = byte(n)
+		n >>= 8
 	}
 
 	return bytes
