@@ -23,7 +23,7 @@
 //   	"fmt"
 //   	"net"
 //
-//   	binrpc "github.com/florentchauveau/go-kamailio-binrpc/v2"
+//   	binrpc "github.com/florentchauveau/go-kamailio-binrpc/v3"
 //   )
 //
 //   func main() {

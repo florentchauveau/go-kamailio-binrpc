@@ -1,7 +1,7 @@
 # go-kamailio-binrpc
 [![Go Report Card](https://goreportcard.com/badge/github.com/florentchauveau/go-kamailio-binrpc)](https://goreportcard.com/report/github.com/florentchauveau/go-kamailio-binrpc)
 [![CircleCI](https://circleci.com/gh/florentchauveau/go-kamailio-binrpc.svg?style=shield)](https://circleci.com/gh/florentchauveau/go-kamailio-binrpc)
-[![GoDoc](https://godoc.org/github.com/florentchauveau/go-kamailio-binrpc?status.svg)](https://godoc.org/github.com/florentchauveau/go-kamailio-binrpc)
+[![GoDoc](https://pkg.go.dev/badge/github.com/florentchauveau/go-kamailio-binrpc/v3)](https://pkg.go.dev/github.com/florentchauveau/go-kamailio-binrpc/v3)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/florentchauveau/go-kamailio-binrpc/blob/master/LICENSE)
 
 Go implementation of Kamailio BINRPC protocol for invoking RPC functions.
@@ -13,7 +13,7 @@ go-kamailio-binrpc has been tested with Go 1.11, but should work with previous v
 ## Usage
 
 ```go
-import binrpc "github.com/florentchauveau/go-kamailio-binrpc/v2"
+import binrpc "github.com/florentchauveau/go-kamailio-binrpc/v3"
 ```
 
 ### Full Example
@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"net"
 
-	binrpc "github.com/florentchauveau/go-kamailio-binrpc/v2"
+	binrpc "github.com/florentchauveau/go-kamailio-binrpc/v3"
 )
 
 func main() {
