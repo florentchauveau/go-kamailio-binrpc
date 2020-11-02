@@ -23,7 +23,7 @@
 //   	"fmt"
 //   	"net"
 //
-//   	binrpc "github.com/florentchauveau/go-kamailio-binrpc/v2"
+//   	binrpc "github.com/florentchauveau/go-kamailio-binrpc/v3"
 //   )
 //
 //   func main() {
@@ -53,13 +53,11 @@ package binrpc
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"strconv"
-
-	"github.com/pkg/errors"
 )
 
 // BinRPCMagic is a magic value at the start of every BINRPC packet.
@@ -79,7 +77,7 @@ const (
 	// the totalLength cannot be larger than 4 bytes
 	// because we have 2 bits to write its "length-1"
 	// so "4" is the largest length that we can write
-	MaxSizeOfLength uint8 = 4
+	MaxSizeOfLength = 4
 )
 
 // internal error used to detect the end of a struct
@@ -88,7 +86,7 @@ var errEndOfStruct = errors.New("END_OF_STRUCT")
 // Header is a struct containing values needed for parsing the payload and replying. It is not a binary representation of the actual header.
 type Header struct {
 	PayloadLength int
-	Cookie        []byte
+	Cookie        uint32
 }
 
 // Record represents a BINRPC type+size, and Go value. It is not a binary representation of a record.
@@ -179,58 +177,53 @@ func (record *Record) Scan(dest interface{}) error {
 
 // Encode is a low level function that encodes a record and writes it to w.
 func (record *Record) Encode(w io.Writer) error {
-	value := record.Value
-
-	var sizeOfValue int
+	var value bytes.Buffer
 
 	switch record.Type {
 	case TypeInt:
 		var v int
 		var ok bool
 
-		if v, ok = value.(int); !ok {
+		if v, ok = record.Value.(int); !ok {
 			return errors.New("type error: expected type int")
 		}
 
 		// shortcut!
 		if v == 0 {
-			return binary.Write(w, binary.BigEndian, byte(0))
+			_, err := w.Write([]byte{0x00})
+			return err
 		}
 
-		var size uint8
-
-		size, value = getMinBinarySizeOfInt(v)
-		sizeOfValue = int(size)
+		value.Write(intToBytesBE(v))
 	case TypeString:
-		if _, ok := value.(string); !ok {
+		if s, ok := record.Value.(string); !ok {
 			return errors.New("type error: expected type string")
+		} else {
+			value.WriteString(s)
 		}
 
-		// append null termination byte
-		value = append([]byte(value.(string)), 0x00)
-
-		if sizeOfValue = binary.Size(value); sizeOfValue == -1 {
-			return fmt.Errorf(`cannot get binary size of "%v"`, value)
-		}
+		value.WriteByte(0x00)
 	default:
 		return fmt.Errorf("type error: type %d not implemented", record.Type)
 	}
+
+	sizeOfValue := value.Len()
 
 	var buffer bytes.Buffer
 
 	if sizeOfValue < 8 {
 		// this can fit in 3 bits
 		header := byte(sizeOfValue<<4) | record.Type
-		binary.Write(&buffer, binary.BigEndian, header)
-		binary.Write(&buffer, binary.BigEndian, value)
+		buffer.WriteByte(header)
+		buffer.Write(value.Bytes())
 	} else {
-		sizeOfSize, sizeOfValueCasted := getMinBinarySizeOfInt(sizeOfValue)
+		sizeBytes := intToBytesBE(sizeOfValue)
 
-		header := 1<<7 | sizeOfSize<<4 | record.Type
+		header := 1<<7 | uint8(len(sizeBytes)<<4) | record.Type
 
-		binary.Write(&buffer, binary.BigEndian, header)
-		binary.Write(&buffer, binary.BigEndian, sizeOfValueCasted)
-		binary.Write(&buffer, binary.BigEndian, value)
+		buffer.WriteByte(header)
+		buffer.Write(sizeBytes)
+		buffer.Write(value.Bytes())
 	}
 
 	if _, err := buffer.WriteTo(w); err != nil {
@@ -263,7 +256,7 @@ func ReadHeader(r io.Reader) (*Header, error) {
 	buf := make([]byte, 2)
 
 	if len, err := r.Read(buf); err != nil {
-		return nil, errors.Wrap(err, "cannot read header")
+		return nil, fmt.Errorf("cannot read header: %w", err)
 	} else if len != 2 {
 		return nil, fmt.Errorf("cannot read header: read=%d/%d", len, 2)
 	}
@@ -282,7 +275,7 @@ func ReadHeader(r io.Reader) (*Header, error) {
 	buf = make([]byte, sizeOfLength)
 
 	if len, err := r.Read(buf); err != nil {
-		return nil, errors.Wrap(err, "cannot read total length")
+		return nil, fmt.Errorf("cannot read total length: %w", err)
 	} else if len != int(sizeOfLength) {
 		return nil, fmt.Errorf("cannot read total length, read=%d/%d", len, sizeOfLength)
 	}
@@ -293,12 +286,16 @@ func ReadHeader(r io.Reader) (*Header, error) {
 		header.PayloadLength = header.PayloadLength<<8 + int(b)
 	}
 
-	header.Cookie = make([]byte, sizeOfCookie)
+	cookieBytes := make([]byte, sizeOfCookie)
 
-	if len, err := r.Read(header.Cookie); err != nil {
-		return nil, errors.Wrap(err, "cannot read cookie")
+	if len, err := r.Read(cookieBytes); err != nil {
+		return nil, fmt.Errorf("cannot read cookie: %w", err)
 	} else if len != int(sizeOfCookie) {
 		return nil, fmt.Errorf("cannot read cookie, read=%d/%d", len, sizeOfCookie)
+	}
+
+	for _, b := range cookieBytes {
+		header.Cookie = header.Cookie<<8 | uint32(b)
 	}
 
 	return &header, nil
@@ -311,7 +308,7 @@ func ReadRecord(r io.Reader) (*Record, error) {
 	buf := make([]byte, 1)
 
 	if len, err := r.Read(buf); err != nil {
-		return nil, errors.Wrap(err, "cannot read record header")
+		return nil, fmt.Errorf("cannot read record header: %w", err)
 	} else if len != 1 {
 		return nil, fmt.Errorf("cannot read record header: read=%d/1", len)
 	}
@@ -331,7 +328,7 @@ func ReadRecord(r io.Reader) (*Record, error) {
 		buf = make([]byte, size)
 
 		if len, err := r.Read(buf); err != nil {
-			return nil, errors.Wrap(err, "cannot read record size")
+			return nil, fmt.Errorf("cannot read record size: %w", err)
 		} else if len != size {
 			return nil, fmt.Errorf("cannot read record size: read=%d/%d", len, size)
 		}
@@ -350,7 +347,7 @@ func ReadRecord(r io.Reader) (*Record, error) {
 		buf = make([]byte, size)
 
 		if len, err := r.Read(buf); err != nil {
-			return nil, errors.Wrap(err, "cannot read record value")
+			return nil, fmt.Errorf("cannot read record value: %w", err)
 		} else if len != size {
 			return nil, fmt.Errorf("cannot read record value: read=%d/%d", len, size)
 		}
@@ -419,8 +416,8 @@ func ReadRecord(r io.Reader) (*Record, error) {
 }
 
 // ReadPacket reads from r and returns records, or an error if one occurred.
-// If expectedCookie is not nil, it verifies the cookie.
-func ReadPacket(r io.Reader, expectedCookie []byte) ([]Record, error) {
+// If expectedCookie is not zero, it verifies the cookie.
+func ReadPacket(r io.Reader, expectedCookie uint32) ([]Record, error) {
 	bufreader := bufio.NewReader(r)
 	header, err := ReadHeader(bufreader)
 
@@ -428,7 +425,7 @@ func ReadPacket(r io.Reader, expectedCookie []byte) ([]Record, error) {
 		return nil, err
 	}
 
-	if expectedCookie != nil && bytes.Compare(expectedCookie, header.Cookie) != 0 {
+	if expectedCookie != 0 && expectedCookie != header.Cookie {
 		return nil, errors.New("expected cookie did not match")
 	}
 
@@ -458,9 +455,9 @@ func ReadPacket(r io.Reader, expectedCookie []byte) ([]Record, error) {
 
 // WritePacket creates a BINRPC packet (header and payload) containing values v, and writes it to w.
 // It returns the cookie generated, or an error if one occurred.
-func WritePacket(w io.Writer, values ...interface{}) ([]byte, error) {
+func WritePacket(w io.Writer, values ...interface{}) (uint32, error) {
 	if len(values) == 0 {
-		return nil, errors.New("missing values")
+		return 0, errors.New("missing values")
 	}
 
 	var header bytes.Buffer
@@ -470,59 +467,62 @@ func WritePacket(w io.Writer, values ...interface{}) ([]byte, error) {
 		record, err := CreateRecord(v)
 
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 
 		if err = record.Encode(&payload); err != nil {
-			return nil, err
+			return 0, err
 		}
 	}
 
-	cookie := uint32(rand.Int63())
+	cookie := rand.Uint32()
+	cookieBytes := intToBytesBE(int(cookie))
+	lengthBE := intToBytesBE(payload.Len())
 
-	sizeOfLength, totalLength := getMinBinarySizeOfInt(payload.Len())
-	sizeOfCookie := binary.Size(cookie)
-
-	if sizeOfLength > MaxSizeOfLength {
-		return nil, fmt.Errorf("packet length too big: %d/%d bytes", sizeOfLength, MaxSizeOfLength)
+	if len(lengthBE) > MaxSizeOfLength {
+		return 0, fmt.Errorf("packet length too big: %d/%d bytes", len(lengthBE), MaxSizeOfLength)
 	}
 
 	header.WriteByte(BinRPCMagic<<4 | BinRPCVersion)
-	header.WriteByte((sizeOfLength-1)<<2 | byte(sizeOfCookie-1))
-
-	binary.Write(&header, binary.BigEndian, totalLength)
-	binary.Write(&header, binary.BigEndian, cookie)
+	header.WriteByte(byte((len(lengthBE)-1)<<2 | len(cookieBytes) - 1))
+	header.Write(lengthBE)
+	header.Write(cookieBytes)
 
 	writer := bufio.NewWriter(w)
 
 	if _, err := writer.Write(header.Bytes()); err != nil {
-		return nil, fmt.Errorf("cannot write header: err=%v", err)
+		return 0, fmt.Errorf("cannot write header: err=%v", err)
 	}
 	if _, err := writer.Write(payload.Bytes()); err != nil {
-		return nil, fmt.Errorf("cannot write payload: err=%v", err)
+		return 0, fmt.Errorf("cannot write payload: err=%v", err)
 	}
 	if err := writer.Flush(); err != nil {
-		return nil, err
+		return 0, err
 	}
 
-	cookieBytes := make([]byte, sizeOfCookie)
-	binary.BigEndian.PutUint32(cookieBytes, cookie)
-
-	return cookieBytes, nil
+	return cookie, nil
 }
 
 // getMinBinarySizeOfInt returns the minimum size in bytes to store a
-// signed integer, and the casted value of minimum size.
-// this is needed because binary.Write requires fixed-size values
-// so an int does not work.
-func getMinBinarySizeOfInt(n int) (uint8, interface{}) {
-	if n >= -128 && n <= 127 {
-		return 1, int8(n)
-	} else if n >= -32768 && n <= 32767 {
-		return 2, int16(n)
-	} else if n >= -2147483648 && n <= 2147483647 {
-		return 4, int32(n)
+// signed integer.
+func getMinBinarySizeOfInt(n int) uint8 {
+	size := uint8(0)
+
+	for size = 4; size > 0 && ((n & (0xff << 24)) == 0); size-- {
+		n <<= 8
 	}
 
-	return 8, int64(n)
+	return size
+}
+
+func intToBytesBE(n int) []byte {
+	size := getMinBinarySizeOfInt(n)
+	bytes := make([]byte, size)
+
+	for i := uint8(0); i < size; i++ {
+		// big endian
+		bytes[i] = byte(n >> ((size - i - 1) * 8))
+	}
+
+	return bytes
 }
