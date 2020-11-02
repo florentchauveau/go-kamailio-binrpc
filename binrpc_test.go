@@ -18,9 +18,10 @@ func TestReadHeader(t *testing.T) {
 		t.Error(err)
 	}
 
-	if bytes.Compare(header.Cookie, data[3:]) != 0 {
+	if header.Cookie != 0x6f8da297 {
 		t.Error("cookie mismatch")
 	}
+
 	if header.PayloadLength != 0x0b {
 		t.Errorf("wrong payload length, expected %d, got %d", 0x0b, header.PayloadLength)
 	}
@@ -121,27 +122,32 @@ func TestWritePacket(t *testing.T) {
 		t.Error(err)
 	}
 
-	if len(cookie) != 4 {
-		t.Errorf("expected cookie len of 4, got %d", len(cookie))
-	}
-	if buffer.Len() != 18 {
-		t.Errorf("output length mismatch, expected 18, got %d", buffer.Len())
+	cookieLength := int(getMinBinarySizeOfInt(int(cookie)))
+	expectedLength := len(expectedHeader) + len(expectedRecord) + cookieLength
+	if buffer.Len() != expectedLength {
+		t.Errorf("output length mismatch, expected %d, got %d", expectedLength, buffer.Len())
 	}
 
 	var expected bytes.Buffer
 
+	// updated the cookie length in the expected header
+	expectedHeader[1] = byte(cookieLength - 1)
+
 	expected.Write(expectedHeader)
-	expected.Write(cookie)
+	for i := 0; i < cookieLength; i++ {
+		// big endian
+		expected.WriteByte(byte(cookie >> ((cookieLength - i - 1) * 8)))
+	}
 	expected.Write(expectedRecord)
 
-	if bytes.Compare(expected.Bytes(), buffer.Bytes()) != 0 {
+	if !bytes.Equal(expected.Bytes(), buffer.Bytes()) {
 		t.Errorf("output differ, expected %x, got %x", expected.Bytes(), buffer.Bytes())
 	}
 }
 
 func TestWritePacketInt(t *testing.T) {
-	expectedHeader, _ := hex.DecodeString("a10303")
-	expectedRecord, _ := hex.DecodeString("20008e")
+	expectedHeader, _ := hex.DecodeString("a10302")
+	expectedRecord, _ := hex.DecodeString("108e")
 
 	var buffer bytes.Buffer
 
@@ -151,32 +157,34 @@ func TestWritePacketInt(t *testing.T) {
 		t.Error(err)
 	}
 
-	if len(cookie) != 4 {
-		t.Errorf("expected cookie len of 4, got %d", len(cookie))
-	}
-	if buffer.Len() != 10 {
-		t.Errorf("output length mismatch, expected 10, got %d", buffer.Len())
+	cookieLength := int(getMinBinarySizeOfInt(int(cookie)))
+	expectedLength := len(expectedHeader) + len(expectedRecord) + cookieLength
+	if buffer.Len() != expectedLength {
+		t.Errorf("output length mismatch, expected %d, got %d", expectedLength, buffer.Len())
 	}
 
 	var expected bytes.Buffer
 
+	// update the cookie length in the expected header
+	expectedHeader[1] = byte(cookieLength - 1)
+
 	expected.Write(expectedHeader)
-	expected.Write(cookie)
+	for i := 0; i < cookieLength; i++ {
+		// big endian
+		expected.WriteByte(byte(cookie >> ((cookieLength - i - 1) * 8)))
+	}
 	expected.Write(expectedRecord)
 
-	if bytes.Compare(expected.Bytes(), buffer.Bytes()) != 0 {
+	if !bytes.Equal(expected.Bytes(), buffer.Bytes()) {
 		t.Errorf("output differ, expected %x, got %x", expected.Bytes(), buffer.Bytes())
 	}
 }
 
 func TestMinBinarySizeOfInt(t *testing.T) {
-	size, value := getMinBinarySizeOfInt(42)
+	size := getMinBinarySizeOfInt(8388605)
 
-	if size != 1 {
-		t.Errorf("expected size of 1, got %d", size)
-	}
-	if _, ok := value.(int8); !ok {
-		t.Error("expected type int8")
+	if size != 3 {
+		t.Errorf("expected size of 3, got %d", size)
 	}
 }
 
@@ -194,10 +202,10 @@ func TestCreateRecord(t *testing.T) {
 	}
 }
 
-func TestReadPacketError(t *testing.T) {
-	raw := "a1332a512aaee42001f49125636f6d6d616e6420636f72652e6563686f20626f6e6a6f757273206e6f7420666f756e6400"
+func TestReadPacket(t *testing.T) {
+	raw := "a1322a9883af2001f49125636f6d6d616e6420636f72652e6563686f20626f6e6a6f757273206e6f7420666f756e6400"
 	data, _ := hex.DecodeString(raw)
-	cookie := []byte{0x51, 0x2a, 0xae, 0xe4}
+	cookie := uint32(0x9883af)
 
 	response, err := ReadPacket(bytes.NewReader(data), cookie)
 
