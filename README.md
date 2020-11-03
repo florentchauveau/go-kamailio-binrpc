@@ -4,7 +4,7 @@
 [![GoDoc](https://pkg.go.dev/badge/github.com/florentchauveau/go-kamailio-binrpc/v3)](https://pkg.go.dev/github.com/florentchauveau/go-kamailio-binrpc/v3)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/florentchauveau/go-kamailio-binrpc/blob/master/LICENSE)
 
-Go implementation of Kamailio BINRPC protocol for invoking RPC functions.
+Zero dependency Go implementation of Kamailio BINRPC protocol, for invoking RPC functions.
 
 This library works with any Kamailio version.
 
