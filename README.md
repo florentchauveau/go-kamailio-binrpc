@@ -90,7 +90,7 @@ modparam("ctl", "binrpc", "tcp:2049")
 
 ## Limits
 
-For now, only int, string and structs are implemented. Other types will return an error.
+For now, only int double string and structs are implemented. Other types will return an error.
 
 ## Contributing
 
