@@ -123,6 +123,15 @@ func (record Record) Int() (int, error) {
 	return record.Value.(int), nil
 }
 
+// Double returns the double value as a float64, or an error if the type is not a double
+func (record Record) Double() (float64, error) {
+	if record.Type != TypeDouble {
+		return 0, fmt.Errorf("type error: expected type double (%d), got %d", TypeDouble, record.Type)
+	}
+
+	return record.Value.(float64), nil
+}
+
 // StructItems returns items for a struct value, or an error if not a struct.
 func (record *Record) StructItems() ([]StructItem, error) {
 	if record.Type != TypeStruct {
@@ -143,6 +152,8 @@ func (record *Record) Scan(dest interface{}) error {
 			*s = record.Value.(string)
 		case TypeInt:
 			*s = strconv.Itoa(record.Value.(int))
+		case TypeDouble:
+			*s = fmt.Sprintf("%.3f", record.Value.(float64))
 		default:
 			return fmt.Errorf("type error: cannot convert type %d to string", record.Type)
 		}
@@ -160,6 +171,23 @@ func (record *Record) Scan(dest interface{}) error {
 			*i = record.Value.(int)
 		default:
 			return fmt.Errorf("type error: cannot convert type %d to int", record.Type)
+		}
+	case *float64:
+		f := dest.(*float64)
+
+		switch record.Type {
+		case TypeString:
+			if value, err := strconv.ParseFloat(record.Value.(string), 64); err == nil {
+				*f = value
+			} else {
+				return err
+			}
+		case TypeInt:
+			*f = float64(record.Value.(int))
+		case TypeDouble:
+			*f = record.Value.(float64)
+		default:
+			return fmt.Errorf("type error: cannot convert type %d to double", record.Type)
 		}
 	case *[]StructItem:
 		if record.Type != TypeStruct {
@@ -203,6 +231,15 @@ func (record *Record) Encode(w io.Writer) error {
 		}
 
 		value.WriteByte(0x00)
+	case TypeDouble:
+		var v float64
+		var ok bool
+
+		if v, ok = record.Value.(float64); !ok {
+			return errors.New("type error: expected type float64")
+		}
+
+		value.Write(intToBytesBE(int(v * 1000)))
 	default:
 		return fmt.Errorf("type error: type %d not implemented", record.Type)
 	}
@@ -244,6 +281,8 @@ func CreateRecord(v interface{}) (*Record, error) {
 		record.Type = TypeString
 	case int:
 		record.Type = TypeInt
+	case float64:
+		record.Type = TypeDouble
 	default:
 		return nil, errors.New("type not implemented")
 	}
@@ -374,6 +413,15 @@ func ReadRecord(r io.Reader) (*Record, error) {
 		for _, b := range buf {
 			record.Value = record.Value.(int)<<8 + int(b)
 		}
+	case TypeDouble:
+		record.Value = int(0)
+
+		for _, b := range buf {
+			record.Value = record.Value.(int)<<8 + int(b)
+		}
+
+		// double are implemented as int*1000
+		record.Value = float64(record.Value.(int)) / 1000.0
 	case TypeStruct:
 		var items []StructItem
 
