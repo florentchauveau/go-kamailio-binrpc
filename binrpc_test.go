@@ -226,6 +226,60 @@ func TestReadPacket(t *testing.T) {
 	}
 }
 
+func TestReadRecordDouble(t *testing.T) {
+	raw := "a103034d309725220634"
+	data, _ := hex.DecodeString(raw)
+	cookie := uint32(0x4d309725)
+	expectedValue := 1.588
+
+	response, err := ReadPacket(bytes.NewReader(data), cookie)
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	if response[0].Type != TypeDouble {
+		t.Errorf("expected first record to be type double, found %d", response[0].Type)
+	}
+
+	if value, err := response[0].Double(); err != nil {
+		t.Error(err)
+	} else if value != expectedValue {
+		t.Errorf("expected response of %v, got %.3f", expectedValue, response[0].Value)
+	}
+}
+
+func TestTypeDouble(t *testing.T) {
+	expectedValue := 1.588
+	expectedRecord, _ := hex.DecodeString("220634")
+	record, err := CreateRecord(expectedValue)
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	var buffer bytes.Buffer
+
+	if err = record.Encode(&buffer); err != nil {
+		t.Error(err)
+	}
+
+	if !bytes.Equal(buffer.Bytes(), expectedRecord) {
+		t.Errorf("expected bytes %x, got %x", expectedRecord, buffer.Bytes())
+	}
+
+	var value float64
+
+	if err = record.Scan(&value); err != nil {
+		t.Error(err)
+	}
+
+	if value != expectedValue {
+		t.Errorf("expected value of %v, got %v", expectedValue, value)
+	}
+}
+
 func ExampleWritePacket() {
 	// establish connection to Kamailio server
 	conn, err := net.Dial("tcp", "localhost:2049")
