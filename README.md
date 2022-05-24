@@ -1,6 +1,6 @@
 # go-kamailio-binrpc
 [![Go Report Card](https://goreportcard.com/badge/github.com/florentchauveau/go-kamailio-binrpc)](https://goreportcard.com/report/github.com/florentchauveau/go-kamailio-binrpc)
-[![CircleCI](https://circleci.com/gh/florentchauveau/go-kamailio-binrpc.svg?style=shield)](https://circleci.com/gh/florentchauveau/go-kamailio-binrpc)
+![CI](https://github.com/florentchauveau/go-kamailio-binrpc/actions/workflows/tests.yml/badge.svg)
 [![GoDoc](https://pkg.go.dev/badge/github.com/florentchauveau/go-kamailio-binrpc/v3)](https://pkg.go.dev/github.com/florentchauveau/go-kamailio-binrpc/v3)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/florentchauveau/go-kamailio-binrpc/blob/master/LICENSE)
 
