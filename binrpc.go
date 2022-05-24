@@ -89,13 +89,18 @@ type Header struct {
 	Cookie        uint32
 }
 
+// ValidTypes is an interface of types that can be used in a Record.
+type ValidTypes interface {
+	int | string | float64
+}
+
 // Record represents a BINRPC type+size, and Go value. It is not a binary representation of a record.
 // Type is the BINRPC type.
 type Record struct {
 	size int
 
 	Type  uint8
-	Value interface{}
+	Value any
 }
 
 // StructItem represents an item in a BINRPC struct. Because BINRPC structs may contain the same key multiple times,
@@ -142,7 +147,7 @@ func (record *Record) StructItems() ([]StructItem, error) {
 }
 
 // Scan copies the value in the Record into the values pointed at by dest. Valid dest type are *int, *string, and *[]StructItem
-func (record *Record) Scan(dest interface{}) error {
+func (record *Record) Scan(dest any) error {
 	switch dest.(type) {
 	case *string:
 		s := dest.(*string)
@@ -271,12 +276,12 @@ func (record *Record) Encode(w io.Writer) error {
 }
 
 // CreateRecord is a low level function that creates a Record from value v and fills the Type property automatically.
-func CreateRecord(v interface{}) (*Record, error) {
+func CreateRecord[T ValidTypes](v T) (*Record, error) {
 	record := Record{
 		Value: v,
 	}
 
-	switch v.(type) {
+	switch any(v).(type) {
 	case string:
 		record.Type = TypeString
 	case int:
@@ -503,7 +508,7 @@ func ReadPacket(r io.Reader, expectedCookie uint32) ([]Record, error) {
 
 // WritePacket creates a BINRPC packet (header and payload) containing values v, and writes it to w.
 // It returns the cookie generated, or an error if one occurred.
-func WritePacket(w io.Writer, values ...interface{}) (uint32, error) {
+func WritePacket[T ValidTypes](w io.Writer, values ...T) (uint32, error) {
 	if len(values) == 0 {
 		return 0, errors.New("missing values")
 	}

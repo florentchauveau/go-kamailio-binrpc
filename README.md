@@ -8,7 +8,7 @@ Zero dependency Go implementation of Kamailio BINRPC protocol, for invoking RPC 
 
 This library works with any Kamailio version.
 
-go-kamailio-binrpc has been tested with Go 1.11, but should work with previous versions.
+go-kamailio-binrpc requires at least Go 1.18.
 
 ## Usage
 
