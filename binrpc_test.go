@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net"
 	"testing"
 )
@@ -419,5 +420,133 @@ func ExampleWritePacket_structResponseScan() {
 			item.Key,
 			value,
 		)
+	}
+}
+
+// TestEncodeIntRoundTrip verifies that ints of every binary size survive
+// an encode/decode round trip. Values larger than 32 bits used to be
+// silently truncated when encoding.
+func TestEncodeIntRoundTrip(t *testing.T) {
+	values := []int{
+		0,
+		1,
+		142,
+		255,
+		256,
+		65536,
+		8388605,
+		0xFFFFFFFF,
+		0x100000000,   // 5 bytes, was truncated to 0
+		67108864000,   // 64 MiB as a fixed-point double, was truncated
+		math.MaxInt64, // 8 bytes, forces the long size form
+		-1,
+		-1500,
+	}
+
+	for _, value := range values {
+		record, err := CreateRecord(value)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var buf bytes.Buffer
+
+		if err = record.Encode(&buf); err != nil {
+			t.Fatalf("value %d: %s", value, err)
+		}
+
+		decoded, err := ReadRecord(&buf)
+
+		if err != nil {
+			t.Fatalf("value %d: %s", value, err)
+		}
+
+		i, err := decoded.Int()
+
+		if err != nil {
+			t.Fatalf("value %d: %s", value, err)
+		}
+
+		if i != value {
+			t.Errorf("expected %d, got %d", value, i)
+		}
+	}
+}
+
+// TestEncodeDoubleRoundTrip verifies that doubles (fixed-point with
+// 3 decimals) survive an encode/decode round trip, including values
+// whose fixed-point representation exceeds 32 bits.
+func TestEncodeDoubleRoundTrip(t *testing.T) {
+	values := []float64{
+		0,
+		1.5,
+		2590984.25,
+		4294967.295, // largest fixed-point value that fits in 32 bits
+		4294967.296, // smallest that does not
+		67108864,    // 64 MiB, as returned by core.shmmem
+		-1.5,
+	}
+
+	for _, value := range values {
+		record, err := CreateRecord(value)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var buf bytes.Buffer
+
+		if err = record.Encode(&buf); err != nil {
+			t.Fatalf("value %f: %s", value, err)
+		}
+
+		decoded, err := ReadRecord(&buf)
+
+		if err != nil {
+			t.Fatalf("value %f: %s", value, err)
+		}
+
+		d, err := decoded.Double()
+
+		if err != nil {
+			t.Fatalf("value %f: %s", value, err)
+		}
+
+		if d != value {
+			t.Errorf("expected %f, got %f", value, d)
+		}
+	}
+}
+
+// TestWritePacketReadPacketRoundTrip verifies a full packet round trip
+// with a value larger than 32 bits.
+func TestWritePacketReadPacketRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+
+	cookie, err := WritePacket(&buf, 67108864000)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	records, err := ReadPacket(&buf, cookie)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+
+	i, err := records[0].Int()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if i != 67108864000 {
+		t.Errorf("expected 67108864000, got %d", i)
 	}
 }

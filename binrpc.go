@@ -556,12 +556,13 @@ func WritePacket[T ValidTypes](w io.Writer, values ...T) (uint32, error) {
 }
 
 // getMinBinarySizeOfInt returns the minimum size in bytes required to store an integer.
+// Negative values take 8 bytes (two's complement).
 func getMinBinarySizeOfInt(value int) uint8 {
-	n := uint32(value)
+	n := uint64(value)
 	size := uint8(0)
 
-	for size = 4; size > 0 && ((n & (0xff << 24)) == 0); size-- {
-		n <<= 8
+	for ; n > 0; n >>= 8 {
+		size++
 	}
 
 	return size
