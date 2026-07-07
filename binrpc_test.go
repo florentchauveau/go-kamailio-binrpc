@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net"
 	"testing"
+	"testing/iotest"
 )
 
 func TestReadHeader(t *testing.T) {
@@ -419,5 +421,183 @@ func ExampleWritePacket_structResponseScan() {
 			item.Key,
 			value,
 		)
+	}
+}
+
+// TestEncodeIntRoundTrip verifies that ints of every binary size survive
+// an encode/decode round trip. Values larger than 32 bits used to be
+// silently truncated when encoding.
+func TestEncodeIntRoundTrip(t *testing.T) {
+	values := []int{
+		0,
+		1,
+		142,
+		255,
+		256,
+		65536,
+		8388605,
+		0xFFFFFFFF,
+		0x100000000,   // 5 bytes, was truncated to 0
+		67108864000,   // 64 MiB as a fixed-point double, was truncated
+		math.MaxInt64, // 8 bytes, forces the long size form
+		-1,
+		-1500,
+	}
+
+	for _, value := range values {
+		record, err := CreateRecord(value)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var buf bytes.Buffer
+
+		if err = record.Encode(&buf); err != nil {
+			t.Fatalf("value %d: %s", value, err)
+		}
+
+		decoded, err := ReadRecord(&buf)
+
+		if err != nil {
+			t.Fatalf("value %d: %s", value, err)
+		}
+
+		i, err := decoded.Int()
+
+		if err != nil {
+			t.Fatalf("value %d: %s", value, err)
+		}
+
+		if i != value {
+			t.Errorf("expected %d, got %d", value, i)
+		}
+	}
+}
+
+// TestEncodeDoubleRoundTrip verifies that doubles (fixed-point with
+// 3 decimals) survive an encode/decode round trip, including values
+// whose fixed-point representation exceeds 32 bits.
+func TestEncodeDoubleRoundTrip(t *testing.T) {
+	values := []float64{
+		0,
+		1.5,
+		2590984.25,
+		4294967.295, // largest fixed-point value that fits in 32 bits
+		4294967.296, // smallest that does not
+		67108864,    // 64 MiB, as returned by core.shmmem
+		-1.5,
+	}
+
+	for _, value := range values {
+		record, err := CreateRecord(value)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var buf bytes.Buffer
+
+		if err = record.Encode(&buf); err != nil {
+			t.Fatalf("value %f: %s", value, err)
+		}
+
+		decoded, err := ReadRecord(&buf)
+
+		if err != nil {
+			t.Fatalf("value %f: %s", value, err)
+		}
+
+		d, err := decoded.Double()
+
+		if err != nil {
+			t.Fatalf("value %f: %s", value, err)
+		}
+
+		if d != value {
+			t.Errorf("expected %f, got %f", value, d)
+		}
+	}
+}
+
+// TestWritePacketReadPacketRoundTrip verifies a full packet round trip
+// with a value larger than 32 bits.
+func TestWritePacketReadPacketRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+
+	cookie, err := WritePacket(&buf, 67108864000)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	records, err := ReadPacket(&buf, cookie)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+
+	i, err := records[0].Int()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if i != 67108864000 {
+		t.Errorf("expected 67108864000, got %d", i)
+	}
+}
+
+// TestReadFragmented verifies that headers, records, and whole packets
+// arriving in arbitrarily small chunks (as TCP allows) are read
+// correctly. Short reads used to be treated as errors.
+func TestReadFragmented(t *testing.T) {
+	headerData := []byte{0xa1, 0x03, 0x0b, 0x6f, 0x8d, 0xa2, 0x97}
+	header, err := ReadHeader(iotest.OneByteReader(bytes.NewReader(headerData)))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if header.PayloadLength != 11 || header.Cookie != 0x6f8da297 {
+		t.Errorf("unexpected header: %+v", header)
+	}
+
+	recordData, _ := hex.DecodeString("9109746d2e737461747300")
+	record, err := ReadRecord(iotest.OneByteReader(bytes.NewReader(recordData)))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if s, _ := record.String(); s != "tm.stats" {
+		t.Errorf(`expected "tm.stats", got "%s"`, s)
+	}
+
+	packetData, _ := hex.DecodeString("a1322a9883af2001f49125636f6d6d616e6420636f72652e6563686f20626f6e6a6f757273206e6f7420666f756e6400")
+	records, err := ReadPacket(iotest.OneByteReader(bytes.NewReader(packetData)), 0x9883af)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(records) != 2 {
+		t.Errorf("expected 2 records, got %d", len(records))
+	}
+}
+
+// TestReadRecordTruncated verifies that a truncated record returns an
+// error instead of blocking or succeeding.
+func TestReadRecordTruncated(t *testing.T) {
+	data, _ := hex.DecodeString("9109746d2e737461747300")
+
+	for size := 1; size < len(data); size++ {
+		if _, err := ReadRecord(bytes.NewReader(data[:size])); err == nil {
+			t.Errorf("expected an error for a record truncated at %d bytes", size)
+		}
 	}
 }

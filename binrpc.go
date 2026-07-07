@@ -5,11 +5,11 @@
 //
 // The BINRPC protocol is described in "src/modules/ctl/binrpc.h": https://github.com/kamailio/kamailio/blob/master/src/modules/ctl/binrpc.h
 //
-// Limits
+// # Limits
 //
 // The current implementation handles only int, string, and structs containing int or string values. Other types will return an error.
 //
-// Usage
+// # Usage
 //
 // High level functions:
 //
@@ -17,37 +17,36 @@
 //
 // - ReadPacket to read the response
 //
-//   package main
+//	package main
 //
-//   import (
-//   	"fmt"
-//   	"net"
+//	import (
+//		"fmt"
+//		"net"
 //
-//   	binrpc "github.com/florentchauveau/go-kamailio-binrpc/v3"
-//   )
+//		binrpc "github.com/florentchauveau/go-kamailio-binrpc/v3"
+//	)
 //
-//   func main() {
-//   	conn, err := net.Dial("tcp", "localhost:2049")
+//	func main() {
+//		conn, err := net.Dial("tcp", "localhost:2049")
 //
-//   	if err != nil {
-//   		panic(err)
-//   	}
+//		if err != nil {
+//			panic(err)
+//		}
 //
-//   	cookie, err := binrpc.WritePacket(conn, "tm.stats")
+//		cookie, err := binrpc.WritePacket(conn, "tm.stats")
 //
-//   	if err != nil {
-//   		panic(err)
-//   	}
+//		if err != nil {
+//			panic(err)
+//		}
 //
-//   	records, err := binrpc.ReadPacket(conn, cookie)
+//		records, err := binrpc.ReadPacket(conn, cookie)
 //
-//   	if err != nil {
-//   		panic(err)
-//   	}
+//		if err != nil {
+//			panic(err)
+//		}
 //
-//   	fmt.Printf("records = %v", records)
-//   }
-//
+//		fmt.Printf("records = %v", records)
+//	}
 package binrpc
 
 import (
@@ -56,7 +55,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"strconv"
 )
 
@@ -299,10 +298,8 @@ func CreateRecord[T ValidTypes](v T) (*Record, error) {
 func ReadHeader(r io.Reader) (*Header, error) {
 	buf := make([]byte, 2)
 
-	if len, err := r.Read(buf); err != nil {
+	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, fmt.Errorf("cannot read header: %w", err)
-	} else if len != 2 {
-		return nil, fmt.Errorf("cannot read header: read=%d/%d", len, 2)
 	}
 
 	if magic := buf[0] >> 4; magic != BinRPCMagic {
@@ -318,10 +315,8 @@ func ReadHeader(r io.Reader) (*Header, error) {
 
 	buf = make([]byte, sizeOfLength)
 
-	if len, err := r.Read(buf); err != nil {
+	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, fmt.Errorf("cannot read total length: %w", err)
-	} else if len != int(sizeOfLength) {
-		return nil, fmt.Errorf("cannot read total length, read=%d/%d", len, sizeOfLength)
 	}
 
 	header := Header{}
@@ -332,10 +327,8 @@ func ReadHeader(r io.Reader) (*Header, error) {
 
 	cookieBytes := make([]byte, sizeOfCookie)
 
-	if len, err := r.Read(cookieBytes); err != nil {
+	if _, err := io.ReadFull(r, cookieBytes); err != nil {
 		return nil, fmt.Errorf("cannot read cookie: %w", err)
-	} else if len != int(sizeOfCookie) {
-		return nil, fmt.Errorf("cannot read cookie, read=%d/%d", len, sizeOfCookie)
 	}
 
 	for _, b := range cookieBytes {
@@ -351,10 +344,8 @@ func ReadRecord(r io.Reader) (*Record, error) {
 
 	buf := make([]byte, 1)
 
-	if len, err := r.Read(buf); err != nil {
+	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, fmt.Errorf("cannot read record header: %w", err)
-	} else if len != 1 {
-		return nil, fmt.Errorf("cannot read record header: read=%d/1", len)
 	}
 
 	flag := buf[0] >> 7
@@ -371,10 +362,8 @@ func ReadRecord(r io.Reader) (*Record, error) {
 	if flag == 1 {
 		buf = make([]byte, size)
 
-		if len, err := r.Read(buf); err != nil {
+		if _, err := io.ReadFull(r, buf); err != nil {
 			return nil, fmt.Errorf("cannot read record size: %w", err)
-		} else if len != size {
-			return nil, fmt.Errorf("cannot read record size: read=%d/%d", len, size)
 		}
 
 		size = 0
@@ -390,10 +379,8 @@ func ReadRecord(r io.Reader) (*Record, error) {
 	} else {
 		buf = make([]byte, size)
 
-		if len, err := r.Read(buf); err != nil {
+		if _, err := io.ReadFull(r, buf); err != nil {
 			return nil, fmt.Errorf("cannot read record value: %w", err)
-		} else if len != size {
-			return nil, fmt.Errorf("cannot read record value: read=%d/%d", len, size)
 		}
 	}
 
@@ -557,12 +544,13 @@ func WritePacket[T ValidTypes](w io.Writer, values ...T) (uint32, error) {
 }
 
 // getMinBinarySizeOfInt returns the minimum size in bytes required to store an integer.
+// Negative values take 8 bytes (two's complement).
 func getMinBinarySizeOfInt(value int) uint8 {
-	n := uint32(value)
+	n := uint64(value)
 	size := uint8(0)
 
-	for size = 4; size > 0 && ((n & (0xff << 24)) == 0); size-- {
-		n <<= 8
+	for ; n > 0; n >>= 8 {
+		size++
 	}
 
 	return size
