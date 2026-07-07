@@ -298,10 +298,8 @@ func CreateRecord[T ValidTypes](v T) (*Record, error) {
 func ReadHeader(r io.Reader) (*Header, error) {
 	buf := make([]byte, 2)
 
-	if len, err := r.Read(buf); err != nil {
+	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, fmt.Errorf("cannot read header: %w", err)
-	} else if len != 2 {
-		return nil, fmt.Errorf("cannot read header: read=%d/%d", len, 2)
 	}
 
 	if magic := buf[0] >> 4; magic != BinRPCMagic {
@@ -317,10 +315,8 @@ func ReadHeader(r io.Reader) (*Header, error) {
 
 	buf = make([]byte, sizeOfLength)
 
-	if len, err := r.Read(buf); err != nil {
+	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, fmt.Errorf("cannot read total length: %w", err)
-	} else if len != int(sizeOfLength) {
-		return nil, fmt.Errorf("cannot read total length, read=%d/%d", len, sizeOfLength)
 	}
 
 	header := Header{}
@@ -331,10 +327,8 @@ func ReadHeader(r io.Reader) (*Header, error) {
 
 	cookieBytes := make([]byte, sizeOfCookie)
 
-	if len, err := r.Read(cookieBytes); err != nil {
+	if _, err := io.ReadFull(r, cookieBytes); err != nil {
 		return nil, fmt.Errorf("cannot read cookie: %w", err)
-	} else if len != int(sizeOfCookie) {
-		return nil, fmt.Errorf("cannot read cookie, read=%d/%d", len, sizeOfCookie)
 	}
 
 	for _, b := range cookieBytes {
@@ -350,10 +344,8 @@ func ReadRecord(r io.Reader) (*Record, error) {
 
 	buf := make([]byte, 1)
 
-	if len, err := r.Read(buf); err != nil {
+	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, fmt.Errorf("cannot read record header: %w", err)
-	} else if len != 1 {
-		return nil, fmt.Errorf("cannot read record header: read=%d/1", len)
 	}
 
 	flag := buf[0] >> 7
@@ -370,10 +362,8 @@ func ReadRecord(r io.Reader) (*Record, error) {
 	if flag == 1 {
 		buf = make([]byte, size)
 
-		if len, err := r.Read(buf); err != nil {
+		if _, err := io.ReadFull(r, buf); err != nil {
 			return nil, fmt.Errorf("cannot read record size: %w", err)
-		} else if len != size {
-			return nil, fmt.Errorf("cannot read record size: read=%d/%d", len, size)
 		}
 
 		size = 0
@@ -389,10 +379,8 @@ func ReadRecord(r io.Reader) (*Record, error) {
 	} else {
 		buf = make([]byte, size)
 
-		if len, err := r.Read(buf); err != nil {
+		if _, err := io.ReadFull(r, buf); err != nil {
 			return nil, fmt.Errorf("cannot read record value: %w", err)
-		} else if len != size {
-			return nil, fmt.Errorf("cannot read record value: read=%d/%d", len, size)
 		}
 	}
 

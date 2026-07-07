@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"testing"
+	"testing/iotest"
 )
 
 func TestReadHeader(t *testing.T) {
@@ -548,5 +549,55 @@ func TestWritePacketReadPacketRoundTrip(t *testing.T) {
 
 	if i != 67108864000 {
 		t.Errorf("expected 67108864000, got %d", i)
+	}
+}
+
+// TestReadFragmented verifies that headers, records, and whole packets
+// arriving in arbitrarily small chunks (as TCP allows) are read
+// correctly. Short reads used to be treated as errors.
+func TestReadFragmented(t *testing.T) {
+	headerData := []byte{0xa1, 0x03, 0x0b, 0x6f, 0x8d, 0xa2, 0x97}
+	header, err := ReadHeader(iotest.OneByteReader(bytes.NewReader(headerData)))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if header.PayloadLength != 11 || header.Cookie != 0x6f8da297 {
+		t.Errorf("unexpected header: %+v", header)
+	}
+
+	recordData, _ := hex.DecodeString("9109746d2e737461747300")
+	record, err := ReadRecord(iotest.OneByteReader(bytes.NewReader(recordData)))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if s, _ := record.String(); s != "tm.stats" {
+		t.Errorf(`expected "tm.stats", got "%s"`, s)
+	}
+
+	packetData, _ := hex.DecodeString("a1322a9883af2001f49125636f6d6d616e6420636f72652e6563686f20626f6e6a6f757273206e6f7420666f756e6400")
+	records, err := ReadPacket(iotest.OneByteReader(bytes.NewReader(packetData)), 0x9883af)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(records) != 2 {
+		t.Errorf("expected 2 records, got %d", len(records))
+	}
+}
+
+// TestReadRecordTruncated verifies that a truncated record returns an
+// error instead of blocking or succeeding.
+func TestReadRecordTruncated(t *testing.T) {
+	data, _ := hex.DecodeString("9109746d2e737461747300")
+
+	for size := 1; size < len(data); size++ {
+		if _, err := ReadRecord(bytes.NewReader(data[:size])); err == nil {
+			t.Errorf("expected an error for a record truncated at %d bytes", size)
+		}
 	}
 }
