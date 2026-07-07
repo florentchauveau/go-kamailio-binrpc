@@ -1,6 +1,9 @@
 name: Run Tests
 
-on: push
+on:
+  push:
+    branches: [master]
+  pull_request:
 
 jobs:
   tests:
@@ -9,12 +12,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
-          go-version: ">=1.18"
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
 
       - name: Run tests
-        run: go test -v
+        run: go test -race -v ./...
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"

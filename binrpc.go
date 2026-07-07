@@ -5,11 +5,11 @@
 //
 // The BINRPC protocol is described in "src/modules/ctl/binrpc.h": https://github.com/kamailio/kamailio/blob/master/src/modules/ctl/binrpc.h
 //
-// Limits
+// # Limits
 //
 // The current implementation handles only int, string, and structs containing int or string values. Other types will return an error.
 //
-// Usage
+// # Usage
 //
 // High level functions:
 //
@@ -17,37 +17,36 @@
 //
 // - ReadPacket to read the response
 //
-//   package main
+//	package main
 //
-//   import (
-//   	"fmt"
-//   	"net"
+//	import (
+//		"fmt"
+//		"net"
 //
-//   	binrpc "github.com/florentchauveau/go-kamailio-binrpc/v3"
-//   )
+//		binrpc "github.com/florentchauveau/go-kamailio-binrpc/v3"
+//	)
 //
-//   func main() {
-//   	conn, err := net.Dial("tcp", "localhost:2049")
+//	func main() {
+//		conn, err := net.Dial("tcp", "localhost:2049")
 //
-//   	if err != nil {
-//   		panic(err)
-//   	}
+//		if err != nil {
+//			panic(err)
+//		}
 //
-//   	cookie, err := binrpc.WritePacket(conn, "tm.stats")
+//		cookie, err := binrpc.WritePacket(conn, "tm.stats")
 //
-//   	if err != nil {
-//   		panic(err)
-//   	}
+//		if err != nil {
+//			panic(err)
+//		}
 //
-//   	records, err := binrpc.ReadPacket(conn, cookie)
+//		records, err := binrpc.ReadPacket(conn, cookie)
 //
-//   	if err != nil {
-//   		panic(err)
-//   	}
+//		if err != nil {
+//			panic(err)
+//		}
 //
-//   	fmt.Printf("records = %v", records)
-//   }
-//
+//		fmt.Printf("records = %v", records)
+//	}
 package binrpc
 
 import (
@@ -56,7 +55,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"strconv"
 )
 
